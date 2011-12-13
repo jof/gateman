@@ -60,7 +60,7 @@ int parport_file_descriptor;
 // send_response fires off a UDP packet.
 int send_response(int socket_descriptor, struct sockaddr *destination_addr, socklen_t destination_addr_size, const char *message, size_t message_length) {
   ssize_t bytes_sent;
-  bytes_sent = sendto(socket_descriptor, message, message_length, 0, (struct sockaddr *)destination_addr, destination_addr_size);
+  bytes_sent = sendto(socket_descriptor, message, message_length-1, 0, (struct sockaddr *)destination_addr, destination_addr_size);
 #ifdef DEBUG
   fprintf(stderr, "Sent \"%.*s\"\n", (int)message_length, message);
 #endif
