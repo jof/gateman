@@ -21,6 +21,9 @@
 #define BUZZER_SOLENOID_REST_TIME 10
 #define BUZZER_ON_TIME 1
 #define SERVER_UDP_PORT 30012
+#define MAXIMUM_SUBSCRIPTION_TIME 60
+// Should end up being ~1K on most systems
+#define MAXIMUM_CLIENT_SUBSCRIPTIONS 64
 
 // Number of seconds to sleep in the main loop between iterations.
 #define MAIN_LOOP_SLEEP_TIME 100000
@@ -44,6 +47,11 @@ const char q_opengate[] = "OPEN!";
 const char r_acknowledged[] = "Acknowledged. Buzzing it open.\n";
 const char r_already_opened[] = "Already opened recently.\n";
 
+const char q_subscribe[] = "subscribe ";
+const char r_subscribe_success[] = "Ok, I'll keep you posted for up to MAXIMUM_SUBSCRIPTION_TIME seconds.\n";
+
+const char r_error[] = "Internal error.\n";
+
 // Represents if the ringer (call to get in) is ringing or has been recently rung.
 unsigned short ringer_state = 0;
 // Represents if the buzzer is ringing or has been recently buzzed.
@@ -56,6 +64,130 @@ struct timeval last_buzzer_firing, last_buzzer_request;
 
 // FD to connect to the parallel port device.
 int parport_file_descriptor;
+// Defined in the global scope, as other functions will need this.
+int listen_file_descriptor;
+
+// Some structure to keep track of interested receivers.
+// A "subscription" describes the time last described, and a sockaddr for the interested client.
+// A "subscriptions" is a doubly-linked list of "subscription" structs.
+struct subscription {
+  time_t time;
+  struct sockaddr_in client;
+};
+struct subscription_node {
+  struct subscription_node* previous;
+  struct subscription subscription;
+  struct subscription_node* next;
+};
+
+struct subscription_node* subscriptions_head = NULL;
+
+struct subscription* make_subscription(struct sockaddr_in* client) {
+  struct subscription* subscription = (struct subscription*)malloc(sizeof(struct subscription));
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  subscription->time = now.tv_sec;
+  subscription->client = *client;
+  return(subscription);
+}
+
+struct subscription_node* make_subscription_node(struct subscription* subscription) {
+  struct subscription_node* n = (struct subscription_node*)malloc(sizeof(struct subscription_node));
+  n->previous = NULL;
+  n->subscription = *subscription;
+  n->next = NULL;
+  return(n);
+}
+
+void insert_subscription_node(struct subscription_node* node) {
+  struct subscription_node* n;
+  if (subscriptions_head == NULL) { // A new, empty list
+    node->previous = NULL;
+    node->next = NULL;
+    subscriptions_head = node;
+  } else {
+    // Walk the list, find the end, re-point pointers there
+    for(n = subscriptions_head; n != NULL; n = n->next) {
+      if(n->next == NULL) { // We're at the end of the list.
+        node->previous = n;
+        node->next = NULL;
+        n->next = node;
+        break;
+      }
+    }
+  }
+}
+
+// Remove a node from the list by re-pointing it's neighbors, or the head
+// pointer
+void remove_subscription_node(struct subscription_node* node){
+  struct subscription_node *previous, *next;
+  previous = node->previous;
+  next = node->next;
+
+  if (previous == NULL && next == NULL) { // We're deleting the only node in the list.
+    subscriptions_head = NULL;
+  } else {
+    if (previous != NULL) {
+      previous->next = next;
+    }
+    if (next != NULL) {
+      next->previous = previous;
+    }
+  }
+  free(node);
+}
+
+// Walk over the list of subscriptions and return a pointer to a node with the
+// client sockaddr being searched for.
+// Will return a NULL pointer if not found. Hack?
+struct subscription_node* find_subscription_node(struct sockaddr_in* client) {
+  struct subscription_node* n;
+  for(n = subscriptions_head; n != NULL; n = n->next) {
+    if (n->subscription.client.sin_addr.s_addr == client->sin_addr.s_addr &&
+        n->subscription.client.sin_port == client->sin_port) {
+      // We found the first matching client subscription
+      return(n);
+    }
+  }
+  return(NULL); // No node found.
+}
+
+// Add or update a client's subscription to ringer state changes in the
+// doubly-linked "subscriptions" list.
+void subscribe_client(struct sockaddr_in* client) {
+  struct subscription_node* subscription_node = find_subscription_node(client);
+  if(subscription_node == NULL) { // This client is not already in the list.
+    struct subscription_node* node = make_subscription_node(make_subscription(client));
+    insert_subscription_node(node);
+  } else { // The client is already in the list, update expiry time.
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    subscription_node->subscription.time = now.tv_sec;
+  }
+}
+
+void subscribe_broadcast() {
+  struct sockaddr_in* sa_broadcast = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+  sa_broadcast->sin_family = AF_INET;
+  sa_broadcast->sin_port = htons(SERVER_UDP_PORT);
+  sa_broadcast->sin_addr.s_addr = INADDR_BROADCAST;
+  subscribe_client(sa_broadcast);
+}
+
+// Remove any subscriptions that have expired.
+void purge_expired_subscriptions() {
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  time_t now_seconds = now.tv_sec;
+
+  struct subscription_node* n;
+  for (n = subscriptions_head; n != NULL; n = n->next) {
+    if (now_seconds > ((n->subscription.time)+(MAXIMUM_SUBSCRIPTION_TIME))) { // Subscription has expired
+      remove_subscription_node(n);
+    }
+  }
+}
 
 // send_response fires off a UDP packet.
 int send_response(int socket_descriptor, struct sockaddr *destination_addr, socklen_t destination_addr_size, const char *message, size_t message_length) {
@@ -66,9 +198,18 @@ int send_response(int socket_descriptor, struct sockaddr *destination_addr, sock
 #endif
   if ( bytes_sent != (ssize_t)message_length ) {
     errno = ECOMM;
+    perror("Error in sending response: ");
     return(-1);
   } else {
     return(0);
+  }
+}
+
+// Fire off ringer event messages to anyone with subscriptions
+void update_ringer_subscriptions() {
+  struct subscription_node* n;
+  for (n = subscriptions_head; n != NULL; n = n->next) {
+    send_response(listen_file_descriptor, (struct sockaddr *)&(n->subscription.client), sizeof(n->subscription.client), r_ringing, sizeof(r_ringing));
   }
 }
 
@@ -113,6 +254,7 @@ void update_ringer_state(void) {
 #endif
     ringer_state = 1;
     last_ring_detected = now;
+    update_ringer_subscriptions();
   }
 }
 
@@ -183,10 +325,12 @@ int update_buzzer_state(void) {
   return(result);
 }
 
+
 // Buzz open the gate, but not too much.
 int buzz_open_gate(void) {
-  // if opened less than BUZZER_SOLENOID_REST_TIME, or buzzer_state == 1, return 1
-  // otherwise, open the gate and return 0
+  // if opened less than BUZZER_SOLENOID_REST_TIME, or buzzer_state == 1 already, return 1 (already opened)
+  // otherwise, open the gate and return 0 (success)
+  // This may also return -1 from the underlying calls to ioctl(2) in enable_buzzer_solenoid
   int result;
   struct timeval now;
   gettimeofday(&now, NULL);
@@ -202,9 +346,8 @@ int buzz_open_gate(void) {
   }
 }
 
-
 int main() {
-  int listen_file_descriptor, result;
+  int result;
   struct sockaddr_in server_address, client_address;
   useconds_t sleeptime = MAIN_LOOP_SLEEP_TIME;
   ssize_t bytes_received;
@@ -231,8 +374,6 @@ int main() {
   // Get a new process group.
   setsid();
 #endif
-
-
 
   // Open up the parallel port
   parport_file_descriptor = open("/dev/parport0", O_RDWR);
@@ -276,6 +417,7 @@ int main() {
     // Update ringer state
     update_ringer_state();
     update_buzzer_state();
+    purge_expired_subscriptions();
 
     // get ready for reception
     char command_buffer[255];
@@ -296,33 +438,26 @@ int main() {
         fprintf(stderr, "Received \"%.*s\"\n", (int)bytes_received, command_buffer);
 #endif
         // Compare the largest command first. if/elses at this level ought to be sorted by size. There ought to be a better way.
-        if ( (strncmp(q_opengate, command_buffer, sizeof(q_opengate))) == 0 ) { 
-
+        if ( (strncmp(q_subscribe, command_buffer, sizeof(q_subscribe))) == 0 ) {
+          // Try and subscribe the remote client to ringer updates. r_subscribe_success or r_subscribe_error_too_long in response.
+          subscribe_client(&client_address);
+          send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_subscribe_success, sizeof(r_subscribe_success));
+        } else if ( (strncmp(q_opengate, command_buffer, sizeof(q_opengate))) == 0 ) { 
           // try and open the gate, r_acknowledged or r_already_opened in response
           result = buzz_open_gate();
           if (result == 0) {
-            result = send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_acknowledged, sizeof(r_acknowledged));
-            if (result < 0) {
-              perror("Error in sending response: ");
-            }
+            send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_acknowledged, sizeof(r_acknowledged));
           } else if (result == 1) {
-            result = send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_already_opened, sizeof(r_already_opened));
-            if (result < 0) {
-              perror("Error in sending response: ");
-            }
+            send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_already_opened, sizeof(r_already_opened));
+          } else if (result == 1) {
+            send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_error, sizeof(r_error));
           }
         } else if ( (strncmp(q_getstatus, command_buffer, sizeof(q_getstatus))) == 0) {
           // see if we've recently been rung. if so, r_ringing, else r_null
           if (ringer_state == 1) {
-            result = send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_ringing, sizeof(r_ringing));
-            if (result < 0) {
-              perror("Error in sending response: ");
-            }
+            send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_ringing, sizeof(r_ringing));
           } else {
-            result = send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_null, sizeof(r_null));
-            if (result < 0) {
-              perror("Error in sending response: ");
-            }
+            send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_null, sizeof(r_null));
           }
         }
       } 
