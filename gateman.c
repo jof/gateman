@@ -254,6 +254,7 @@ void update_ringer_state(void) {
 #endif
     ringer_state = 1;
     last_ring_detected = now;
+    update_ringer_subscriptions();
   }
 }
 
@@ -346,7 +347,7 @@ int buzz_open_gate(void) {
 }
 
 int main() {
-  int listen_file_descriptor, result;
+  int result;
   struct sockaddr_in server_address, client_address;
   useconds_t sleeptime = MAIN_LOOP_SLEEP_TIME;
   ssize_t bytes_received;
@@ -373,8 +374,6 @@ int main() {
   // Get a new process group.
   setsid();
 #endif
-
-
 
   // Open up the parallel port
   parport_file_descriptor = open("/dev/parport0", O_RDWR);
@@ -418,6 +417,7 @@ int main() {
     // Update ringer state
     update_ringer_state();
     update_buzzer_state();
+    purge_expired_subscriptions();
 
     // get ready for reception
     char command_buffer[255];
