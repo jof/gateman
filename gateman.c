@@ -47,7 +47,7 @@ const char q_opengate[] = "OPEN!";
 const char r_acknowledged[] = "Acknowledged. Buzzing it open.\n";
 const char r_already_opened[] = "Already opened recently.\n";
 
-const char q_subscribe[] = "subscribe ";
+const char q_subscribe[] = "Subscribe.";
 const char r_subscribe_success[] = "Ok, I'll keep you posted for up to MAXIMUM_SUBSCRIPTION_TIME seconds.\n";
 
 const char r_error[] = "Internal error.\n";
