@@ -100,24 +100,12 @@ struct subscription_node* make_subscription_node(struct subscription* subscripti
 }
 
 void insert_subscription_node(struct subscription_node* node) {
-  // FIXME It would be more efficient to shift in new subscriptions to the head
-  // (order doesn't really matter), rather than walking the list each time
-  struct subscription_node* n;
-  if (subscriptions_head == NULL) { // A new, empty list
-    node->previous = NULL;
-    node->next = NULL;
-    subscriptions_head = node;
-  } else {
-    // Walk the list, find the end, re-point pointers there
-    for(n = subscriptions_head; n != NULL; n = n->next) {
-      if(n->next == NULL) { // We're at the end of the list.
-        node->previous = n;
-        node->next = NULL;
-        n->next = node;
-        break;
-      }
-    }
-  }
+  // Initialize the node's pointers.
+  node->next = NULL;
+  node->previous = NULL;
+  // Push the new node onto the head of the list.
+  node->next = subscriptions_head;
+  subscriptions_head = node;
 }
 
 // Remove a node from the list by re-pointing it's neighbors, or the head
