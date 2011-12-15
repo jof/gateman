@@ -100,6 +100,8 @@ struct subscription_node* make_subscription_node(struct subscription* subscripti
 }
 
 void insert_subscription_node(struct subscription_node* node) {
+  // FIXME It would be more efficient to shift in new subscriptions to the head
+  // (order doesn't really matter), rather than walking the list each time
   struct subscription_node* n;
   if (subscriptions_head == NULL) { // A new, empty list
     node->previous = NULL;
