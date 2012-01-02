@@ -32,6 +32,13 @@
 //#define DEBUG
 #define DAEMON
 
+/* Copyright 2011 -- Jonathan Lassoff <jof@thejof.com>
+ *
+ * This source code is licensed under the 2-Clause BSD license.
+ * For more information, see the LICENSE file that was distributed with this
+ * software.
+*/
+
 // Some strings that represent the tokens for the simple protocol.
 //
 // q_XXXXX -- a query / command
