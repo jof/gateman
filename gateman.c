@@ -46,6 +46,8 @@
 //
 // q_getstatus -> r_null | r_ringing
 // q_opengate -> r_acknowledged | r_already_opened
+//
+// q_subscribe -> r_subscribe_success | r_error
 const char q_getstatus[] = "Sup?";
 const char r_null[] = "Nothing.\n";
 const char r_ringing[] = "RING!\n";
