@@ -46,6 +46,8 @@ const char q_opengate[] = "OPEN!";
 const char r_acknowledged[] = "Acknowledged. Buzzing it open.";
 const char r_already_opened[] = "Already opened recently.";
 
+const char r_badrequest[] = "Huh?";
+
 // Represents the last time that we fired the solenoid to be on.
 unsigned long last_buzzer_firing;
 // Last time we got an interrupt from the ringer being pushed
@@ -182,6 +184,8 @@ void loop(void) {
       } else {
         send_response(r_null, remote_ip, remote_port);
       }
+    } else {
+      send_response(r_badrequest, remote_ip, remote_port);
     }
   } 
 }
