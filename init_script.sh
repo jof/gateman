@@ -45,9 +45,9 @@ do_start()
 	#   0 if daemon has been started
 	#   1 if daemon was already running
 	#   2 if daemon could not be started
-	start-stop-daemon --start --quiet --pidfile $PIDFILE --chuid gateman:lp --exec $DAEMON --test > /dev/null \
+	start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE --chuid gateman:lp --exec $DAEMON --test > /dev/null \
 		|| return 1
-	start-stop-daemon --start --quiet --pidfile $PIDFILE --chuid gateman:lp --exec $DAEMON -- \
+	start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE --chuid gateman:lp --exec $DAEMON -- \
 		$DAEMON_ARGS \
 		|| return 2
 	# Add code here, if necessary, that waits for the process to be ready
