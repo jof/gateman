@@ -1,0 +1,5 @@
+gateman (1.0.5) unstable; urgency=low
+
+  * Initial Debian packaging.
+
+ -- Jonathan Lassoff <jof@thejof.com>  Fri, 05 Jul 2013 23:40:28 -0700

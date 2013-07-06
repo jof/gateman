@@ -1,0 +1,18 @@
+Source: gateman
+Section: misc
+Priority: extra
+Maintainer: Jonathan Lassoff <jof@thejof.com>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.3
+Homepage: https://github.com/noisebridge/gateman
+Vcs-Git: git://github.com/noisebridge/gateman.git
+Vcs-Browser: https://github.com/noisebridge/gateman
+
+Package: gateman
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: A daemon to interact with physical locks.
+ Gateman is a simple daemon intended to interact with physical hardware locks.
+ Currently, it only supports two platforms:
+ - Simply interacting with a gate at the Noisebridge Hackerspace's front gate through a parallel port.
+ - Ethernet-Arduino (Wiznet/"Ethernet.h") based bit-banger and ring detector.

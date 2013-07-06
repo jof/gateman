@@ -1,16 +1,15 @@
 CFLAGS=-Wall -O2
 # Conditionally assign DESTDIR
-DESTDIR ?= /usr/local
+DESTDIR ?= /
 TOP := $(dir $(lastword $(MAKEFILE_LIST)))
 
 .PHONY: install upstart all clean
 
 all: gateman
-install: gateman upstart
-	install --mode=0755 --owner=root --group=root $(TOP)/gateman $(DESTDIR)/sbin
-upstart: upstart-gateman.conf
-	install --mode=0644 --owner=root --group=root $(TOP)/upstart-gateman.conf /etc/init/noisebridge-gateman.conf
-test:
-	@echo "DESTDIR is ${DESTDIR}"
+install: gateman
+	install --mode=0755 --owner=root --group=root -d $(DESTDIR)/usr/sbin
+	install --mode=0755 --owner=root --group=root $(TOP)/gateman $(DESTDIR)/usr/sbin
+	install --mode=0644 --owner=root --group=root -d $(DESTDIR)/etc/init
+	install --mode=0644 --owner=root --group=root -T $(TOP)/upstart.conf $(DESTDIR)/etc/init/gateman.conf
 clean:
-	rm gateman
+	-rm gateman
