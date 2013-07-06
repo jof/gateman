@@ -24,6 +24,7 @@
 #define MAXIMUM_SUBSCRIPTION_TIME 60
 // Should end up being ~1K on most systems
 #define MAXIMUM_CLIENT_SUBSCRIPTIONS 64
+#define PARALLEL_PORT_DEVICE "/dev/parport0"
 
 // Number of seconds to sleep in the main loop between iterations.
 #define MAIN_LOOP_SLEEP_TIME 100000
@@ -226,6 +227,7 @@ int is_buzzer_ringing(void) {
   } else {
     return 0;
   }
+  free(&result);
 }
 
 // Make sure global variables cache the state of reality.
@@ -327,7 +329,7 @@ int update_buzzer_state(void) {
 
 // Buzz open the gate, but not too much.
 int buzz_open_gate(void) {
-  // if opened less than BUZZER_SOLENOID_REST_TIME, or buzzer_state == 1 already, return 1 (already opened)
+  // if opened less than BUZZER_SOLENOID_REST_TIME ago, or buzzer_state == 1 already, return 1 (already opened)
   // otherwise, open the gate and return 0 (success)
   // This may also return -1 from the underlying calls to ioctl(2) in enable_buzzer_solenoid
   int result;
@@ -336,8 +338,14 @@ int buzz_open_gate(void) {
   int time_delta = (int)now.tv_sec - (int)last_buzzer_firing.tv_sec;
 
   if (buzzer_state == 1 || time_delta < BUZZER_SOLENOID_REST_TIME) {
+#ifdef DEBUG
+  fprintf(stderr, "buzz_open_gate(): The buzzer has already been engaged. Returning 1\n");
+#endif
     return(1);
   } else {
+#ifdef DEBUG
+    fprintf(stderr, "buzz_open_gate(): enabling the buzzer solenoid\n");
+#endif
     result = enable_buzzer_solenoid();
     buzzer_state = 1;
     last_buzzer_firing = now;
@@ -375,9 +383,9 @@ int main() {
 #endif
 
   // Open up the parallel port
-  parport_file_descriptor = open("/dev/parport0", O_RDWR);
+  parport_file_descriptor = open(PARALLEL_PORT_DEVICE, O_RDWR);
   if (parport_file_descriptor < 0) {
-    perror("Error in opening /dev/parport0: ");
+    perror("Error in opening PARALLEL_PORT_DEVICE: ");
     exit(1);
   }
   // Seize control of it
@@ -443,12 +451,15 @@ int main() {
           send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_subscribe_success, sizeof(r_subscribe_success));
         } else if ( (strncmp(q_opengate, command_buffer, sizeof(q_opengate))) == 0 ) { 
           // try and open the gate, r_acknowledged or r_already_opened in response
+#ifdef DEBUG
+          fprintf(stderr, "main(): Going to try and open the gate.\n");
+#endif
           result = buzz_open_gate();
           if (result == 0) {
             send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_acknowledged, sizeof(r_acknowledged));
           } else if (result == 1) {
             send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_already_opened, sizeof(r_already_opened));
-          } else if (result == 1) {
+          } else {
             send_response(listen_file_descriptor, (struct sockaddr *)&client_address, client_struct_length, r_error, sizeof(r_error));
           }
         } else if ( (strncmp(q_getstatus, command_buffer, sizeof(q_getstatus))) == 0) {
