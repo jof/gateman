@@ -34,7 +34,7 @@
 
 /* Copyright 2011 -- Jonathan Lassoff <jof@thejof.com>
  *
- * This source code is licensed under the 2-Clause BSD license.
+ * This source code is licensed under the WTF Public License (WTFPL).
  * For more information, see the LICENSE file that was distributed with this
  * software.
 */
